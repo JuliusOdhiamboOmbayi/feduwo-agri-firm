@@ -5,15 +5,9 @@ Responsive agricultural consultancy website and API for client enquiries, consul
 ## Technology
 
 - React 18, Vite, React Router, Tailwind CSS, Framer Motion, Lucide React, React Hook Form and Axios
-- Node.js, Express, MongoDB, Mongoose, JWT and bcrypt
-- Multer 2 for private applicant-document uploads
-- Nodemailer for optional email notifications
-
-## Requirements
-
-- Node.js 20 or later
-- MongoDB 6 or later (local or managed)
-- npm
+- Node.js, Express, Vercel Functions and Supabase PostgreSQL
+- Supabase private Storage for applicant documents
+- JWT authentication, bcrypt password hashing, and Nodemailer notifications
 
 ## Local setup
 
@@ -23,97 +17,115 @@ Responsive agricultural consultancy website and API for client enquiries, consul
    npm install
    ```
 
-2. Copy `.env.example` to `.env` and set `MONGODB_URI`, a random `JWT_SECRET` of at least 32 characters, and the initial administrator values. Do not commit `.env`.
+2. Create a Supabase project. In its SQL Editor, run the complete [`supabase/schema.sql`](./supabase/schema.sql) script. This creates the tables, private document bucket, and database-backed rate-limit function.
+3. Copy `.env.example` to `.env`. Set the Supabase project URL, the server-only service role key, and a random `JWT_SECRET` of at least 32 characters. Never expose the service role key as a `VITE_` variable or commit it.
 
    ```powershell
    Copy-Item .env.example .env
    ```
 
-3. Optional: set SMTP values to receive new-enquiry, consultation, registration and application email notifications. Without SMTP configuration, submissions are still saved and the API reports that a notification was not sent.
-
-4. Create or update the initial administrator:
+4. Create the initial administrator:
 
    ```powershell
    npm run create-admin
    ```
 
-5. Start the API and frontend in separate terminals:
+   Set `ADMIN_NAME`, `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` of at least 12 characters in `.env`.
+5. Optional: set SMTP values to receive new-enquiry, consultation, registration and application email notifications. Without SMTP configuration, submissions are still saved.
+6. Start the API and frontend in separate terminals:
 
    ```powershell
    npm run server
    npm run dev
    ```
 
-6. Open the Vite URL (normally `http://localhost:5173`). The API is available at `http://localhost:5000/api`.
+   Vite proxies `/api` requests to the local Express server at `http://localhost:5000`.
 
-For a production frontend build, run `npm run build`. The Express application serves the generated `dist` directory. Set `NODE_ENV=production`, `CLIENT_ORIGIN`, `SITE_URL`, MongoDB and JWT values for the target deployment. Provision HTTPS at the hosting/reverse-proxy layer. The XML sitemap is available when `SITE_URL` is set; `robots.txt` is served from the frontend public assets.
+## Deploy to Vercel + Supabase
 
-## Render + MongoDB Atlas deployment
+The Vercel configuration builds the Vite site as static assets and routes `/api/*` to an Express serverless function. Supabase provides PostgreSQL and a private Storage bucket; no MongoDB or Render service is used.
 
-The root `render.yaml` describes a single Render Node web service that builds the Vite client and serves the Express API and frontend on the same origin. This keeps `/api` working without a separate frontend API URL.
+1. Create a Supabase project and run [`supabase/schema.sql`](./supabase/schema.sql) in the Supabase SQL Editor.
+2. In Vercel, import `JuliusOdhiamboOmbayi/feduwo-agri-firm` from GitHub. Keep the project root at the repository root and use the checked-in `vercel.json` settings.
+3. Add these environment variables in Vercel for Production (and Preview if needed):
 
-1. Push this repository to a GitHub repository you own.
-2. Create a MongoDB Atlas cluster and database user. Allow connections from your deployment host (or use Atlas network access configured for your Render service), then copy the database connection string.
-3. In Render, choose **New → Blueprint**, connect the GitHub repository, and select `render.yaml`.
-4. Enter the requested `MONGODB_URI` in Render's environment setup. Render generates `JWT_SECRET`. Keep both values in Render, never in the repository.
-5. After the first successful deploy, set `ADMIN_NAME`, `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (minimum 12 characters) in the Render service environment. Run `npm run create-admin` once from the Render Shell; remove `ADMIN_PASSWORD` from the service environment after setup. Admin setup values are deliberately not committed to the Blueprint.
-6. Configure optional `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, and `NOTIFICATION_EMAIL` values to enable staff notifications and applicant confirmations.
-7. Deploy, then use the assigned `https://feduwo-agri-firm.onrender.com` address. If Render assigns a different address, update `CLIENT_ORIGIN` and `SITE_URL` to that exact origin and redeploy.
+   | Variable | Value |
+   |---|---|
+   | `SUPABASE_URL` | Supabase project URL |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Supabase server-only service role key; keep secret |
+   | `JWT_SECRET` | Random secret of at least 32 characters |
+   | `SITE_URL` | The deployed site origin, such as `https://your-project.vercel.app` |
+   | `CLIENT_ORIGIN` | Optional allowed origin; Vercel deployment origins are detected automatically |
+   | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Optional mail delivery settings |
+   | `NOTIFICATION_EMAIL` | Optional recipient for site notifications |
 
-The free Render plan may spin down an idle service and is intended for initial previews, not guaranteed uptime. Choose an always-on plan for a production business site. MongoDB Atlas hosting and data-retention/backup policies are configured separately from Render.
+4. Deploy the site.
+5. Provision the first administrator from a trusted local machine: put `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_NAME`, `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` in a local, untracked `.env`, then run:
+
+   ```powershell
+   npm run create-admin
+   ```
+
+   Do not add the service-role key or admin password to source control or expose them to the browser. The provisioning script updates the administrator password if run again.
+6. Verify `https://your-project.vercel.app/api/health`, then sign in at `/admin`.
+
+Vercel's serverless request payload limit means applicant documents are limited to **4 MB combined per application**. Documents are stored in the private Supabase bucket and downloaded only through the authenticated admin API. Vercel Free usage and Supabase quotas/retention policies are subject to their current provider limits.
 
 ## Environment variables
 
 | Variable | Purpose |
 |---|---|
-| `PORT` | Express listening port (default `5000`) |
+| `PORT` | Local Express port (default `5000`) |
 | `NODE_ENV` | Runtime environment |
-| `CLIENT_ORIGIN` | Comma-separated allowed browser origins |
-| `MONGODB_URI` | MongoDB connection string |
+| `CLIENT_ORIGIN` | Optional comma-separated browser origins |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only Supabase service role key |
 | `JWT_SECRET` | Signing secret, minimum 32 characters |
 | `JWT_EXPIRES_IN` | JWT lifetime (default `8h`) |
-| `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Initial administrator setup; password must be at least 12 characters |
+| `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` | One-time local administrator provisioning values |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Optional SMTP delivery settings |
 | `NOTIFICATION_EMAIL` | Recipient for website notifications |
-| `SITE_URL` | Canonical deployment origin, used by the sitemap |
+| `SITE_URL` | Canonical deployment origin |
+| `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL` | Set automatically by Vercel; used for origin detection |
 | `VITE_API_URL` | Optional API base URL for a separately deployed client |
 
 ## API overview
 
 Public endpoints:
 
-- `POST /api/auth/login` — administrator sign-in (rate limited)
+- `POST /api/auth/login` — administrator sign-in
 - `POST /api/consultations` — consultation request
 - `POST /api/enquiries` — contact enquiry
 - `GET /api/training` and `POST /api/training/register`
-- `GET /api/jobs` and `POST /api/jobs/:id/applications` (multipart; resume required, PDF/DOC/DOCX, maximum 5 MB per file)
+- `GET /api/jobs` and `POST /api/jobs/:id/applications` (PDF/DOC/DOCX; 4 MB combined)
 - `GET /api/articles`, `GET /api/articles/:slug`
 - `GET /api/projects` — published, verified projects only
 - `POST /api/newsletter`
 - `GET /api/health`
 
-Protected endpoints require `Authorization: Bearer <JWT>`:
+Protected endpoints require `Authorization: Bearer <token>`:
 
 - `GET /api/admin/dashboard`
 - `GET|POST /api/admin/users`, `PATCH /api/admin/users/:id` (admin role)
 - `GET|POST /api/admin/:resource`, `PATCH|DELETE /api/admin/:resource/:id`
-- `GET /api/admin/applications/:id/documents/:filename` — authorized document download
+- `GET /api/admin/applications/:id/documents/:filename` — authorized private document download
 
 Admin resources include consultations, enquiries, training, registrations, jobs, applications, articles, projects, subscribers and activities. Project publishing is limited to administrators; project pages show only verified records. Deletion is limited to administrators.
 
 ## Security and privacy
 
-- Passwords use bcrypt hashing; public account creation is disabled.
+- Staff passwords are bcrypt-hashed; public account creation is disabled.
 - JWTs expire and protected APIs re-check that the user is active.
-- API request limits, login-specific rate limiting, Helmet, CORS allowlisting, JSON size limits, schema validation and unique indexes are enabled.
-- Applicant documents are stored outside the static web root, signature-checked, and require an authenticated administrator session to download.
-- Do not deploy the example environment values. Use TLS, rotate credentials, restrict database network access, back up data securely, and configure an upload-retention/deletion process.
-- The site collects personal information for replies, registrations and recruitment. Configure a privacy notice and retention practices for the organization, limit access to authorized staff, and obtain Kenya-specific legal advice to ensure compliance with the Data Protection Act, 2019. This starter is not a legal compliance certification.
+- Supabase Row Level Security is enabled for every application table without public access policies. Only server functions use the service-role key.
+- Login and application rate limits are stored in PostgreSQL so they work across serverless invocations.
+- Applicant documents are signature-checked, stored in a private bucket, and require an authenticated administrator session to download.
+- Do not deploy example values. Use TLS, rotate credentials, back up data securely, and configure an upload-retention/deletion process.
+- The site collects personal information for replies, registrations and recruitment. Configure a privacy notice and retention practices for the organization, limit access to authorized staff, and obtain Kenya-specific legal advice for Data Protection Act, 2019 compliance. This starter is not a legal compliance certification.
 
 ## Content and launch checklist
 
 - Supplied contact details and logo are included. No office address, testimonials, biographies, qualifications, registrations, projects, results, vacancy or course schedules have been invented.
-- Add verified programmes, vacancies, articles and projects through the authenticated admin API/dashboard. Project results must be verified before publication.
-- Configure the actual domain in `SITE_URL` (used by `robots.txt` and the dynamic XML sitemap), SMTP credentials, MongoDB backups, deployment secrets and production CORS origin.
+- Add verified programmes, vacancies, articles and projects through the authenticated admin dashboard. Project results must be verified before publication.
+- Configure the actual domain in `SITE_URL`, SMTP credentials, Supabase backups and production environment variables.
 - Replace or review the general privacy and terms text with company-approved legal copy.
 - Stock photography is remotely loaded from Unsplash; replace with licensed company photography for final brand launch.
